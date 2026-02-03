@@ -1,4 +1,4 @@
--- 初期ロード待ちとゲームIDチェック
+-- 1. 読み込み待ち & IDチェック
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -10,123 +10,94 @@ end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() and Players.LocalPlayer
 
-print("Rivals Integrated Script starting...")
+print("Rivals Full Hack Starting...")
 
 -- ==========================================
--- セクション1: アンチチートディスエイブラー
+-- セクションA: アンチチート無効化
 -- ==========================================
 local success, err = pcall(function()
-    assert(getgc, "executor missing required function getgc")
-    assert(debug and debug.info, "executor missing required function debug.info")
-    assert(hookfunction, "executor missing required function hookfunction")
-    assert(getconnections, "executor missing required function getconnections")
-    assert(newcclosure, "executor missing required function newcclosure")
-
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local LogService = game:GetService("LogService")
     local ScriptContext = game:GetService("ScriptContext")
 
-    -- AnalyticsPipelineの無効化
+    -- 送信系関数のハング（AnalyticsPipeline）
     task.spawn(function()
-        local hooked = 0
         for _, v in pairs(getgc(true)) do
             if typeof(v) == "function" then
                 local ok, src = pcall(function() return debug.info(v, "s") end)
                 if ok and type(src) == "string" and string.find(src, "AnalyticsPipelineController") then
-                    hooked += 1
-                    hookfunction(v, newcclosure(function(...)
-                        return task.wait(9e9)
-                    end))
+                    hookfunction(v, newcclosure(function(...) return task.wait(9e9) end))
                 end
             end
         end
-        print("Hanged " .. hooked .. " functions")
     end)
 
     -- リモートイベントのフック
     task.spawn(function()
-        local ok, remote = pcall(function()
-            return ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AnalyticsPipeline"):WaitForChild("RemoteEvent")
-        end)
-        if ok and remote and remote.OnClientEvent then
-            local hooked = 0
-            for _, conn in pairs(getconnections(remote.OnClientEvent)) do
-                if conn and conn.Function then
-                    if pcall(function() hookfunction(conn.Function, newcclosure(function(...) end)) end) then 
-                        hooked += 1
-                    end
-                end
+        local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AnalyticsPipeline"):WaitForChild("RemoteEvent")
+        for _, conn in pairs(getconnections(remote.OnClientEvent)) do
+            if conn.Function then
+                hookfunction(conn.Function, newcclosure(function(...) end))
             end
-            print("Hooked " .. hooked .. " anticheat remotes")
         end
     end)
 
-    -- ログ送信とエラー報告の遮断
+    -- ログ・エラー報告の完全遮断
     task.spawn(function()
         for _, conn in pairs(getconnections(LogService.MessageOut)) do
-            if conn and conn.Function then
-                pcall(function() hookfunction(conn.Function, newcclosure(function(...) end)) end)
-            end
+            if conn.Function then hookfunction(conn.Function, newcclosure(function(...) end)) end
         end
-        
         for _, conn in ipairs(getconnections(ScriptContext.Error)) do
-            pcall(function() conn:Disable() end)
+            conn:Disable()
         end
-        
-        pcall(function()
-            hookfunction(ScriptContext.Error.Connect, newcclosure(function(...) return nil end))
-        end)
-        print("Log/Error connections disabled")
+        hookfunction(ScriptContext.Error.Connect, newcclosure(function(...) return nil end))
     end)
 
-    -- Kick関数の無効化
+    -- Kick回避
     task.spawn(function()
-        local KickNames = {"Kick", "kick"}
-        for _, name in ipairs(KickNames) do
-            local fn = LocalPlayer[name]
-            if type(fn) == "function" then
-                local oldkick
-                oldkick = hookfunction(fn, newcclosure(function(self, ...)
-                    if self == LocalPlayer then return end
-                    return oldkick(self, ...)
-                end))
-            end
+        local function hookKick(name)
+            local old; old = hookfunction(LocalPlayer[name], newcclosure(function(self, ...)
+                if self == LocalPlayer then return nil end
+                return old(self, ...)
+            end))
         end
+        hookKick("Kick")
+        hookKick("kick")
     end)
 end)
 
 -- ==========================================
--- セクション2: パラメータ書き換え (Mod機能)
+-- セクションB: 全機能一括適用（toggleTableAttribute）
 -- ==========================================
 local function toggleTableAttribute(attribute, value)
-    local count = 0
     for _, gcVal in pairs(getgc(true)) do
         if type(gcVal) == "table" and rawget(gcVal, attribute) then
             gcVal[attribute] = value
-            count += 1
         end
     end
-    return count
 end
 
-if success then
-    -- クールダウンやリコイルの適用
-    toggleTableAttribute("ShootCooldown", 0)
-    toggleTableAttribute("ShootSpread", 0)
-    toggleTableAttribute("ShootRecoil", 0)
-    toggleTableAttribute("AttackCooldown", 0)
-    toggleTableAttribute("DeflectCooldown", 0)
-    toggleTableAttribute("DashCooldown", 0)
-    toggleTableAttribute("Cooldown", 0)
-    toggleTableAttribute("SpinCooldown", 0)
-    toggleTableAttribute("BuildCooldown", 0)
+-- ご提示いただいたすべての項目をここに集約
+toggleTableAttribute("ShootCooldown", 0)
+toggleTableAttribute("ShootSpread", 0)
+toggleTableAttribute("ShootRecoil", 0)
+toggleTableAttribute("AttackCooldown", 0)
+toggleTableAttribute("DeflectCooldown", 0)
+toggleTableAttribute("DashCooldown", 0)
+toggleTableAttribute("Cooldown", 0)
+toggleTableAttribute("SpinCooldown", 0)
+toggleTableAttribute("BuildCooldown", 0)
 
+-- ==========================================
+-- 完了通知
+-- ==========================================
+if success then
     game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Rivals Multi-Hack",
-        Text = "Anticheat Disabled & Mods Applied!",
+        Title = "Rivals Script",
+        Text = "Anticheat OFF & All Mods ON!",
         Duration = 5
     })
-    print("All modifications applied successfully!")
+    print("Done! All attributes set to 0.")
 else
-    warn("Failed to initialize: " .. tostring(err))
+    warn("Error during bypass: " .. tostring(err))
 end
